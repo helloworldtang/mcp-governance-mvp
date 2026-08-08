@@ -1,5 +1,16 @@
 """Gateway 变体 B —— 显式命令式转发（FastMCP 边缘 server + 手写转发）。
 
+【Java/C 读者速查】本文件用到的 Python 特性：
+  - 装饰器 @gw.custom_route(...)：类似 Java 注解，把下面的函数注册成「处理 GET /health 的回调」。
+  - async def / await：协程。await = 等一个异步结果但不阻塞线程（类似 Java CompletableFuture / C 协程）。
+  - async with X as c:：异步的 try-with-resources，离开块自动调清理（关闭连接）。
+  - dict[str, str] ≈ Java Map<String,String>；tuple[str,str,str] ≈ 固定长度的三元组（类似 record）。
+  - f"...{var}..."：格式化字符串，类似 C 的 printf / Java 的 String.format。
+  - **kwargs：收集任意「关键字参数」成一个 dict（类似 Java 的 Map<String,Object> 形参）。
+  - __xxx__（双下划线 dunder）：Python 对象的内部属性，如 __signature__、__annotations__。
+  - asyncio.run(coro)：从同步代码启动一个异步函数的事件循环。
+  - if __name__ == "__main__": ≈ Java 的 public static void main —— 直接运行才执行，被 import 时不执行。
+
 和变体 A 的对比轴：**转发机制是声明式还是手写**。
   - A: gw.mount(create_proxy(url), namespace=...) —— 一行/后端，转发是 create_proxy 的黑盒。
   - B: 启动时拉 Registry → 为每个后端工具【按其 inputSchema 重建签名】注册一个本地代理 tool；
@@ -26,12 +37,13 @@ from starlette.responses import JSONResponse
 from core.config import API_KEYS, GATEWAY_PORT, REGISTRY_URL
 from core.log_util import log_gateway
 
+# 构造一个 MCP server 实例（≈ new 一个服务对象）；它对外暴露工具，对内连后端
 gw = FastMCP("gateway-explicit")
 
-# namespace → 后端 MCP url（启动时从 Registry 拉）
+# namespace → 后端 MCP url（启动时从 Registry 拉）。dict ≈ Java HashMap，模块级变量 ≈ static 字段
 _backends: dict[str, str] = {}
 
-# JSON Schema type → Python type（重建代理 tool 签名用）
+# JSON Schema type → Python type（重建代理 tool 签名用）。常量全大写 ≈ Java static final
 _TYPE_MAP = {
     "string": str,
     "integer": int,
@@ -48,15 +60,20 @@ def _resolve_identity() -> tuple[str, str, str]:
     ⚠️ 避坑：FastMCP 的 get_http_headers() 会【刻意剔除 Authorization 等标准头】，
     鉴权头必须走 get_http_request().headers 拿原始请求头。
     """
+    # get_http_request() 返回当前请求对象（由 FastMCP 用 contextvar 注入，类似线程上下文）
     req = get_http_request()
     if req is None:
+        # raise ≈ Java throw；ToolError 是 MCP 协议的错误类型，会被框架转成错误响应回客户端
         raise ToolError("401 Unauthorized: 无 HTTP 请求上下文")
+    # 推导式：把请求头拷成全小写 key 的 dict（HTTP 头大小写不敏感，统一小写便于取值）
     h = {k.lower(): v for k, v in req.headers.items()}
+    # 去掉 "Bearer " 前缀，取出真正的 key 字符串
     key = h.get("authorization", "").removeprefix("Bearer ").strip()
-    ident = API_KEYS.get(key)
+    ident = API_KEYS.get(key)  # 查 key→{user,role} 映射；不存在返回 None
     if not ident:
         raise ToolError(f"401 Unauthorized: 未知 API key '{key[:12] or '<空>'}...'")
     trace = h.get("x-trace-id", "-")
+    # tuple 多返回值（Java 要用类/record 包装；Python 直接返回元组，调用方解包）
     return ident["user"], ident["role"], trace
 
 
@@ -67,13 +84,16 @@ async def _forward(namespace: str, tool_name: str, arguments: dict[str, Any]) ->
     2. 用 X-User/X-Role/X-Trace-Id 连后端（把身份带到 Runtime 执行点）
     3. 调原始工具，回传文本
     """
-    user, role, trace = _resolve_identity()
+    user, role, trace = _resolve_identity()  # 解包三元组
     url = _backends[namespace]
     log_gateway(f"路由 {namespace}_{tool_name} → {url}   身份 {user}({role})", trace=trace)
+    # 构造到后端的 MCP 客户端 transport（指定 url + 随请求带的自定义头）
     transport = StreamableHttpTransport(url, headers={"X-User": user, "X-Role": role, "X-Trace-Id": trace})
-    async with Client(transport) as bc:
-        result = await bc.call_tool(tool_name, arguments)
+    async with Client(transport) as bc:  # 建立连接；离开 with 自动断开（≈ try-with-resources）
+        result = await bc.call_tool(tool_name, arguments)  # 远程调用后端工具，await 等结果
+    # result.content 是返回内容列表（MCP 工具可返回多段）；这里取第一段的文本
     text = result.content[0].text if result.content else str(result)
+    # hasattr ≈ Java 反射 field.exists()；判断后端是否返回了错误（如 viewer 被拒）
     denied = result.is_error if hasattr(result, "is_error") else False
     log_gateway(
         f"← {namespace}_{tool_name}   {user}({role})   {'✘ DENIED' if denied else '✔'}",
@@ -88,16 +108,17 @@ def _build_proxy_tool(namespace: str, bt_name: str, schema: dict[str, Any], desc
     FastMCP 用 get_type_hints + inspect.signature 推导 schema，所以两边都要注入。
     这一步是「通用网关」的必经之路：你拿到的是别处的 schema，得还原成可调用的签名。
     """
-    props: dict[str, Any] = schema.get("properties", {})
-    required = set(schema.get("required", []))
-    params: list[inspect.Parameter] = []
-    annotations: dict[str, type] = {}
-    for pname, pdef in props.items():
-        ptype = _TYPE_MAP.get(pdef.get("type", "string"), str)
+    props: dict[str, Any] = schema.get("properties", {})  # 工具参数定义
+    required = set(schema.get("required", []))  # 必填参数名集合（set ≈ Java HashSet）
+    params: list[inspect.Parameter] = []  # 收集 inspect.Parameter（签名里的一个参数）
+    annotations: dict[str, type] = {}  # 参数名 → Python 类型（pydantic 据此推导 schema）
+    for pname, pdef in props.items():  # 遍历每个参数定义
+        ptype = _TYPE_MAP.get(pdef.get("type", "string"), str)  # JSON Schema type → Python type
         annotations[pname] = ptype
         if pname in required:
             params.append(inspect.Parameter(pname, inspect.Parameter.POSITIONAL_OR_KEYWORD, annotation=ptype))
         else:
+            # 可选参数带默认值（pdef.get("default") 可能返回 None）
             params.append(
                 inspect.Parameter(
                     pname,
@@ -107,14 +128,20 @@ def _build_proxy_tool(namespace: str, bt_name: str, schema: dict[str, Any], desc
                 )
             )
 
+    # 闭包：_proxy 捕获外层的 namespace/bt_name，被调用时转发到 _forward
     async def _proxy(**kwargs: Any) -> str:
+        # **kwargs 把调用方传的参数收成 dict，原样转给后端
         return await _forward(namespace, bt_name, kwargs)
 
+    # 关键魔法：手动给 _proxy 装上「签名」和「类型注解」，让 FastMCP 把它当成
+    # 一个带 city:str 这类参数的工具暴露给客户端（否则 FastMCP 看不到参数）。
     _proxy.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
     _proxy.__annotations__ = annotations
+    # 用 FastMCP 的 FunctionTool.from_function 把它包装成正式工具对象（指定对外的名字/描述）
     return FunctionTool.from_function(_proxy, name=f"{namespace}_{bt_name}", description=description)
 
 
+# 装饰器：注册一个【非 MCP 的普通 HTTP 路由】/health（运维探活用，不走 MCP 协议）
 @gw.custom_route("/health", methods=["GET"])
 async def _health(_request: Request) -> JSONResponse:
     """存活探针。"""
@@ -123,25 +150,29 @@ async def _health(_request: Request) -> JSONResponse:
 
 async def _bootstrap() -> None:
     """启动时从 Registry 拉清单，为每个后端工具注册代理 tool。"""
-    async with httpx.AsyncClient(timeout=5) as c:
+    async with httpx.AsyncClient(timeout=5) as c:  # 异步 HTTP 客户端（≈ Java AsyncHttpClient）
         r = await c.get(f"{REGISTRY_URL}/servers")
-        servers = r.json().get("servers", [])
+        servers = r.json().get("servers", [])  # 解析 JSON 响应；.get(key, 默认值) 防 KeyError
     if not servers:
         log_gateway("Registry 里还没有 up 的 Runtime（先起 Runtime 再起 Gateway）", "✘")
-    for srv in servers:
+    for srv in servers:  # 遍历每个已注册的后端 Runtime
         ns, url = srv["namespace"], srv["url"]
         _backends[ns] = url
+        # 连后端，列出它有哪些工具（拿到每个工具的 name + inputSchema）
         async with Client(StreamableHttpTransport(url)) as bc:
             tools = await bc.list_tools()
         for t in tools:
+            # 为每个后端工具造一个本地代理 tool 并注册到网关
             gw.add_tool(_build_proxy_tool(ns, t.name, t.inputSchema, t.description or t.name))
         log_gateway(f"注册 {len(tools)} 个代理 tool ← {ns}({url})", "📖")
 
 
 if __name__ == "__main__":
+    # 直接 `python -m gateway.explicit_proxy` 运行时才执行（被 import 时不执行）
     import uvicorn
 
-    asyncio.run(_bootstrap())
-    app = gw.http_app(path="/mcp", stateless_http=True)
+    asyncio.run(_bootstrap())  # 先把后端工具拉进来注册
+    app = gw.http_app(path="/mcp", stateless_http=True)  # 把 MCP server 包成 ASGI 应用（stateless=无状态）
     log_gateway(f"显式网关就绪 @ :{GATEWAY_PORT}  端点 /mcp  (stateless)")
+    # uvicorn 是 ASGI 服务器（≈ Java 的内嵌 Tomcat），监听端口跑 app
     uvicorn.run(app, host="127.0.0.1", port=GATEWAY_PORT, log_level="warning")

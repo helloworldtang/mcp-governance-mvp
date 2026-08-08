@@ -1,6 +1,8 @@
 """Runtime: calc —— 执行层（FastMCP streamable-http, :8301）。
 
-只有 read 工具：用来演示「同是 read 标签、不同 namespace」，Gateway 按 namespace 路由。
+【Java/C 读者】@mcp.tool(tags={"read"}) 把 async 函数注册成 MCP 工具（详见 weather.py 注释）；
+a: float / -> str 是类型注解，MCP 据此生成参数 schema。本文件只有 read 工具，用来演示
+「同是 read 标签、不同 namespace」，Gateway 按 namespace 路由（calc_* vs weather_*）。
 """
 
 import httpx

@@ -1,5 +1,12 @@
 """全局配置常量 —— 端口、身份映射、模型、跨进程 header 契约。
 
+【Java/C 读者速查】
+  - 模块级常量（全大写）≈ Java 的 `public static final`，被各进程 import 共享（只读）。
+  - dict[str, dict[str, str]] ≈ Map<String, Map<String,String>>（嵌套 Map）。
+  - str | None ≈ 「String 或 null」联合类型（Java 没有，相当于 Optional 的类型层表达）。
+  - f"http://...:{PORT}"：f-string 格式化（≈ C printf / Java String.format），{变量} 插值。
+  - os.environ.get(K, 默认)：读环境变量，不存在用默认（≈ System.getenv with default）。
+
 三层各进程都 import 这一份，保证端口 / header 名 / 身份口径处处一致。
 """
 

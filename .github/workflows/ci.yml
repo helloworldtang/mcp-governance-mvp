@@ -1,0 +1,38 @@
+name: CI
+
+# push 或 PR 到 main 时触发；跑代码风格 + 类型 + 测试三道门。
+# 不需要 DEEPSEEK_API_KEY —— pytest 覆盖的是三层治理机制，不打真实 LLM。
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  quality-and-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Set up Python
+        run: uv python install 3.12
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Mypy type check
+        run: uv run mypy . --ignore-missing-imports
+
+      - name: Pytest
+        run: uv run pytest

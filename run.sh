@@ -2,9 +2,9 @@
 # 一键跑通 MCP 三层治理 demo：Registry → Runtime(weather+calc) → Gateway($1) → Client(DeepSeek)
 #
 # 用法:
-#   ./run_demo.sh <native|explicit> "<任务>" [--user alice|bob]
-#   ./run_demo.sh explicit "查一下上海天气" --user bob
-#   ./run_demo.sh native   "把天气缓存清掉" --user alice
+#   ./run.sh <native|explicit> "<任务>" [--user alice|bob]
+#   ./run.sh explicit "查一下上海天气" --user bob
+#   ./run.sh native   "把天气缓存清掉" --user alice
 #
 # 各进程日志：/tmp/mcp_{registry,weather,calc,gateway}.log
 set -uo pipefail

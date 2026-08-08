@@ -22,7 +22,7 @@ for V in native explicit; do
   sep
   echo "  变体 $V  ——  任务: $TASK  用户参数: ${USER_ARGS[*]:-（默认 bob）}"
   sep
-  ./run_demo.sh "$V" "$TASK" ${USER_ARGS[@]+"${USER_ARGS[@]}"} 2>&1 \
+  ./run.sh "$V" "$TASK" ${USER_ARGS[@]+"${USER_ARGS[@]}"} 2>&1 \
     | grep -E "$EXTRACT" \
     | grep -vE "清理进程" \
     | sed 's/^/  /'

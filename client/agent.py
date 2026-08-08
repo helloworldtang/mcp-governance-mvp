@@ -1,5 +1,15 @@
 """DeepSeek ReAct Agent —— 三层治理的调用方（Client 腿）。
 
+【Java/C 读者速查】
+  - ReAct Agent：LLM 边「思考」边「调工具」的循环（Thought→Action→Observation→...）。
+    langgraph 的 create_react_agent(llm, tools) 装配好这个循环；agent.ainvoke(输入) 跑一轮。
+  - langchain / langchain-mcp-adapters / langgraph：Python 的 LLM 应用三件套
+    （≈ Java 里 LangChain4j）。MultiServerMCPClient 把 MCP 工具桥接成 LangChain 工具。
+  - SecretStr：Pydantic 的「敏感字符串」（避免日志泄露 key）；langchain-openai 的 api_key 要它。
+  - secrets.token_hex(3)：生成 6 位十六进制随机串（≈ Java SecureRandom）。
+  - list[BaseMessage] ≈ List<Message>；result["messages"] 取 dict 值（Python dict ≈ Map）。
+  - m.tool_calls or []：`x or 默认` 短路，x 为 None/空时取默认（防 NPE 风格）。
+
 连到 Gateway 的 streamable-http 端点，带 Authorization: Bearer <key>。
 Gateway 解析 key → 注入 X-User/X-Role → 路由到 Runtime → Runtime 在执行点做 per-user 鉴权。
 

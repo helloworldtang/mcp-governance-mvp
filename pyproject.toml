@@ -28,6 +28,7 @@ dependencies = [
 dev = [
     "ruff>=0.6",
     "mypy>=1.11",
+    "pytest>=8.0",
 ]
 
 [tool.uv]
@@ -70,4 +71,16 @@ disallow_incomplete_defs = true
 [[tool.mypy.overrides]]
 module = ["fastmcp.*", "langchain_mcp_adapters.*", "langgraph.*", "starlette.*"]
 ignore_missing_imports = true
+
+# 测试代码放宽：fixture 参数常无类型注解
+[[tool.mypy.overrides]]
+module = ["tests.*"]
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+# ── pytest ──
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]
 

@@ -1,5 +1,11 @@
 """数据面审计日志 —— 把每次工具调用(谁、调了啥、allow/deny、结果)落盘成 JSONL。
 
+【Java/C 读者速查】
+  - with _LOCK, open(...) as f:：with = 自动资源管理（≈ Java try-with-resources）。
+    `with _LOCK, open(...)` 同时持有锁 + 打开文件，离开块自动释放二者（≈ synchronized + close）。
+  - Lock()：互斥锁（≈ Java ReentrantLock）；多进程并发追加时避免半行交错。
+  - Path("...")：面向对象的路径（≈ Java Path/Paths.get），`/` 拼接子路径。
+
 这是 Runtime 层"审计"职责的落地：stderr 日志会随进程退出消失，审计行是
 【持久化、可回放、可对账】的数据面留痕。生产里它会进 SIEM / append-only 存储；
 本 demo 落 output/audit.jsonl 够教学。

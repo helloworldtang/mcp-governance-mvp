@@ -1,5 +1,11 @@
 """三层结构化 emoji 日志 —— 让 Registry/Gateway/Runtime 职责在输出里肉眼可分。
 
+【Java/C 读者速查】
+  - def log(layer, msg, *emoji, trace="")：`*emoji` 收集任意个位置参数成 tuple
+    （≈ Java 的 Object... 可变参数）；`trace=""` 是带默认值的关键字参数（调用时可省略）。
+  - log_registry(msg, *e, ...) 里的 `*e` 再把可变参数透传给 log（`*` 解包）。
+  - print(..., file=sys.stderr, flush=True)：写到标准错误并立即刷新（不缓冲，日志实时可见）。
+
 前缀约定（对应三层 + ReAct 动作）：
   📖 [registry]  注册 / 发现 / 心跳
   🚪 [gateway]   鉴权 / 路由 / 转发 / 审计

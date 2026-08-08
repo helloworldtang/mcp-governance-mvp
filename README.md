@@ -1,5 +1,8 @@
 # MCP 三层治理 demo · Registry → Gateway → Runtime
 
+[![CI](https://github.com/helloworldtang/mcp-governance-mvp/actions/workflows/ci.yml/badge.svg)](https://github.com/helloworldtang/mcp-governance-mvp/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 Python 端到端 demo，把 MCP（Model Context Protocol）的**三层治理过程**完整跑给人看：发现 → 路由 → 执行。基于业界调研选型 **FastMCP + FastAPI**，做了**两个 Gateway 变体对比**（声明式 `mount(create_proxy)` vs 手写逐跳转发），用 **DeepSeek ReAct Agent** 当调用方，让治理流程在真实工具选择中显形。
 
 > **定位**：教学 MVP —— 架构与机制（三层切分、无状态协议、执行点 per-user 鉴权、数据面 trace+审计）与生产 **1:1 对得上**；但安全/可靠性横切（明文身份头、静态 key、无 TLS/限流/HA）是刻意的教学简化，**不是 drop-in 生产代码**。生产替换路径见末尾「扩展」。
@@ -20,7 +23,7 @@ Python 端到端 demo，把 MCP（Model Context Protocol）的**三层治理过�
                   │  Streamable HTTP  :8200/mcp
                   ▼
         ┌──────────────────────────────────────────────┐
-        │ Gateway  (二选一，run_demo.sh 第一个参数切换)    │
+        │ Gateway  (二选一，run.sh 第一个参数切换)    │
         │  native   = mount(create_proxy(rt), ns=...)   │  gateway/fastmcp_native.py
         │             + AuthInjectMiddleware 注入身份     │
         │  explicit = 手写 _forward() 逐跳转发           │  gateway/explicit_proxy.py
@@ -155,16 +158,16 @@ uv sync
 export DEEPSEEK_API_KEY=sk-...   # 或写进 .env（看 .env.example）
 
 # 2. 基本流：explicit Gateway，bob 查天气 → 成功
-./run_demo.sh explicit "查一下上海天气" --user bob
+./run.sh explicit "查一下上海天气" --user bob
 
 # 3. per-user 鉴权拒绝：bob 清缓存 → 被 Runtime 拒
-./run_demo.sh explicit "把天气缓存清掉" --user bob
+./run.sh explicit "把天气缓存清掉" --user bob
 
 # 4. 同任务 alice → 成功
-./run_demo.sh explicit "把天气缓存清掉" --user alice
+./run.sh explicit "把天气缓存清掉" --user alice
 
 # 5. 换 native Gateway，行为一致
-./run_demo.sh native "把天气缓存清掉" --user bob
+./run.sh native "把天气缓存清掉" --user bob
 
 # 6. 两变体并排对比
 ./compare_gateways.sh "查一下北京天气" --user bob
@@ -178,7 +181,7 @@ export DEEPSEEK_API_KEY=sk-...   # 或写进 .env（看 .env.example）
 2. **FastMCP 的 `create_proxy` 会自动透传入站 HTTP header 到后端**（已验证：client 的 X-User 到了 weather）。所以变体 A 用 middleware 注入 X-User/X-Role，create_proxy 就能带到 Runtime。无需 fallback。
 3. **默认 streamable-http 是有状态的**（要 `Mcp-Session-Id`）。本 demo 全用 `mcp.http_app(stateless_http=True)`，对齐 2026-07-28 无状态协议，反代不必维护会话。
 4. **动态代理 tool 要同时注入 `__signature__` 和 `__annotations__`**：FastMCP/pydantic 用 `get_type_hints`（读 `__annotations__`）+ `inspect.signature` 推导 schema，缺一不可。—— `gateway/explicit_proxy.py:72`。
-5. **进程清理按端口，别只靠 `pkill -f`**：模块名匹配偶尔漏，旧 Gateway 占着端口会让新进程 `Errno 48` 静默失败（client 连到旧代码）。`run_demo.sh` 用 `lsof -ti :PORT | xargs kill`。
+5. **进程清理按端口，别只靠 `pkill -f`**：模块名匹配偶尔漏，旧 Gateway 占着端口会让新进程 `Errno 48` 静默失败（client 连到旧代码）。`run.sh` 用 `lsof -ti :PORT | xargs kill`。
 6. **macOS 的 BSD sed 不支持 `\|` 交替**：脚本里过滤用 `grep -E`，别用 sed。
 
 ## 代码风格（生产级，按 [python-code-style](https://skills.sh/wshobson/agents/python-code-style) skill）
@@ -193,7 +196,20 @@ uv run ruff format .        # 格式化
 uv run mypy . --ignore-missing-imports   # 类型检查（strict）
 ```
 
-当前状态：`ruff check` 全过、`mypy strict` 零问题、5/5 运行时回归通过。
+当前状态：`ruff check` 全过、`mypy strict` 零问题、14 个 pytest 通过、5/5 运行时回归通过。
+
+## 开发 / 贡献
+
+```bash
+uv sync                                    # 装 dev 工具（ruff/mypy/pytest）
+uv run ruff check . && uv run ruff format --check .   # 提交前必过
+uv run mypy . --ignore-missing-imports     # strict 类型检查
+uv run pytest                              # 14 个测试，不起 LLM，~2.5s
+```
+
+- 改代码规范、加 Runtime/Gateway、写测试等见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
+- 每个源文件顶部都有【Java/C 读者速查】注释块，解释该文件用到的 Python 特性，不熟 Python 也能看懂。
+- CI（`.github/workflows/ci.yml`）会自动跑这四步。
 
 ## 目录
 
@@ -214,10 +230,13 @@ mcp/
 ├── client/
 │   ├── agent.py           # DeepSeek ReAct Agent + MultiServerMCPClient(带 Authorization)
 │   └── run.py             # CLI 入口
-├── output/                # 每次运行转写
-├── run_demo.sh            # 一键：registry → runtime×2 → gateway($1) → client
+├── tests/                 # pytest：registry CRUD + authz 单元 + gateway 端到端（不起 LLM）
+├── .github/workflows/ci.yml  # CI：ruff + mypy + pytest
+├── output/                # 每次运行转写（gitignored）
+├── run.sh                 # 一键：registry → runtime×2 → gateway($1) → client
 ├── compare_gateways.sh    # 同任务跑两个 Gateway 变体对比
-└── pyproject.toml         # uv，fastmcp/fastapi/httpx/langchain-mcp-adapters
+├── CONTRIBUTING.md        # 开发环境 + 提交规范 + 怎么加 Runtime/Gateway/测试
+└── pyproject.toml         # uv，fastmcp/fastapi/httpx/langchain-mcp-adapters + ruff/mypy/pytest
 ```
 
 ## 扩展（生产路径）
