@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# venv
+.venv/
+venv/
+
+# 运行产物
+output/
+logs/
+*.log
+
+# 环境 / 系统
+.env
+.DS_Store
+.idea/
+.vscode/
+
+# Claude Code 本地会话/权限设置（不入库）
+.claude/

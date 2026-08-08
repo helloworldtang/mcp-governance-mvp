@@ -1,0 +1,73 @@
+[project]
+name = "mcp-governance-mvp"
+version = "0.1.0"
+description = "MCP 三层治理 demo：Registry(发现) → Gateway(路由/鉴权) → Runtime(执行/per-user 鉴权) · FastMCP + FastAPI · 两个 Gateway 变体对比 · DeepSeek ReAct Agent 调用"
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Jackie" }]
+keywords = ["mcp", "model-context-protocol", "gateway", "registry", "runtime", "governance", "fastmcp", "deepseek"]
+requires-python = ">=3.11"
+dependencies = [
+    # ── Runtime / Gateway：FastMCP（MCP server + 组合 + 代理）──
+    "fastmcp>=2.14",
+    # ── Registry / 显式 Gateway：FastAPI ──
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    # ── 跨进程 HTTP：注册 / 心跳 / 转发 ──
+    "httpx>=0.27",
+    # ── Client：DeepSeek ReAct Agent ──
+    "langgraph>=0.2",
+    "langchain>=0.3",
+    "langchain-openai>=0.2",
+    "langchain-mcp-adapters>=0.1",
+]
+
+# 开发期工具：ruff（lint+format，替代 black/isort/flake8）+ mypy（类型检查）
+# 依 python-code-style skill 的生产级配置
+[dependency-groups]
+dev = [
+    "ruff>=0.6",
+    "mypy>=1.11",
+]
+
+[tool.uv]
+package = false
+
+# ── ruff：单工具 lint + format（python-code-style skill 推荐）──
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort（导入排序）
+    "B",    # flake8-bugbear
+    "C4",   # flake8-comprehensions
+    "UP",   # pyupgrade
+    "SIM",  # flake8-simplify
+]
+ignore = ["E501"]  # 行长由 formatter 管（line-length=120）
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.ruff.lint.isort]
+known-first-party = ["core", "registry", "runtime", "gateway", "client"]
+
+# ── mypy：类型检查；框架无 stub 的模块降级处理 ──
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = ["fastmcp.*", "langchain_mcp_adapters.*", "langgraph.*", "starlette.*"]
+ignore_missing_imports = true
+

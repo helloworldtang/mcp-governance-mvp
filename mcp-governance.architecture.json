@@ -1,0 +1,257 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "MCP 三层治理 · Registry → Gateway → Runtime",
+    "subtitle": "FastMCP + FastAPI · 两个 Gateway 变体 · DeepSeek ReAct Agent 调用 · per-user 鉴权",
+    "output": "architecture.html",
+    "quality_profile": "standard",
+    "visual_preset": "classic",
+    "viewBox": [
+      1060,
+      700
+    ],
+    "views": [
+      {
+        "id": "data-path",
+        "label": "请求主路：Client→Gateway→Runtime",
+        "focus": [
+          "client",
+          "native",
+          "weather"
+        ],
+        "note": "Authorization 在 Gateway 终结，X-User/X-Role 注入后透传到 Runtime 执行点。"
+      },
+      {
+        "id": "discovery",
+        "label": "发现与治理：Registry",
+        "focus": [
+          "explicit",
+          "registry",
+          "calc"
+        ],
+        "note": "Runtime 自注册；Gateway 启动时从 Registry 拉 /servers 建路由。"
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "client",
+      "type": "frontend",
+      "label": "DeepSeek ReAct Agent",
+      "sublabel": "Client · 选工具 + 带 Authorization",
+      "tag": "调用方",
+      "pos": [
+        80,
+        40
+      ],
+      "size": [
+        240,
+        64
+      ]
+    },
+    {
+      "id": "native",
+      "type": "backend",
+      "label": "Gateway · native",
+      "sublabel": "mount(create_proxy) + AuthInjectMiddleware",
+      "tag": "声明式 · :8200",
+      "pos": [
+        75,
+        220
+      ],
+      "size": [
+        250,
+        96
+      ]
+    },
+    {
+      "id": "explicit",
+      "type": "backend",
+      "label": "Gateway · explicit",
+      "sublabel": "手写 _forward() 逐跳转发",
+      "tag": "显式 · :8200",
+      "pos": [
+        360,
+        220
+      ],
+      "size": [
+        250,
+        96
+      ]
+    },
+    {
+      "id": "weather",
+      "type": "backend",
+      "label": "Runtime · weather",
+      "sublabel": "FastMCP :8300 · get_forecast[read] / reset_cache[admin]",
+      "tag": "执行点鉴权",
+      "pos": [
+        75,
+        432
+      ],
+      "size": [
+        250,
+        82
+      ]
+    },
+    {
+      "id": "calc",
+      "type": "backend",
+      "label": "Runtime · calc",
+      "sublabel": "FastMCP :8301 · add / multiply[read]",
+      "tag": "执行点鉴权",
+      "pos": [
+        360,
+        432
+      ],
+      "size": [
+        250,
+        82
+      ]
+    },
+    {
+      "id": "registry",
+      "type": "cloud",
+      "label": "Registry",
+      "sublabel": "FastAPI :8100 · 注册 / 发现 / 心跳",
+      "tag": "发现层",
+      "pos": [
+        820,
+        227
+      ],
+      "size": [
+        210,
+        82
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Gateway 层 · native | explicit 二选一（run_demo.sh $1）",
+      "wraps": [
+        "native",
+        "explicit"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Runtime 执行层 · FastMCP · per-user 鉴权",
+      "wraps": [
+        "weather",
+        "calc"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "client-native",
+      "from": "client",
+      "to": "native",
+      "label": "① Authorization: Bearer <key>",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 30
+    },
+    {
+      "id": "client-explicit",
+      "from": "client",
+      "to": "explicit",
+      "label": "① Authorization: Bearer",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 30
+    },
+    {
+      "id": "native-weather",
+      "from": "native",
+      "to": "weather",
+      "label": "② 注入 X-User / X-Role 透传",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 26
+    },
+    {
+      "id": "explicit-calc",
+      "from": "explicit",
+      "to": "calc",
+      "label": "② 注入 X-User / X-Role 透传",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelDy": 26
+    },
+    {
+      "id": "calc-registry",
+      "from": "calc",
+      "to": "registry",
+      "label": "③ 自注册 POST /register",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "weather-registry",
+      "from": "weather",
+      "to": "registry",
+      "label": "③ 自注册",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "via": [
+        [
+          195,
+          600
+        ],
+        [
+          925,
+          600
+        ]
+      ]
+    },
+    {
+      "id": "explicit-registry",
+      "from": "explicit",
+      "to": "registry",
+      "label": "④ GET /servers 拉目录建路由",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "violet",
+      "title": "控制面 vs 数据面",
+      "items": [
+        "数据面（①②）：工具调用 tools/call 的真实载荷流 Client→Gateway→Runtime，身份随请求走 header",
+        "控制面（③④）：Registry 的 /register /servers 元数据 + Gateway 的路由表/鉴权策略",
+        "Gateway 横跨两面：数据面转发载荷，每次转发查控制面做鉴权+路由",
+        "Registry 是纯控制面：零工具数据流过"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "鉴权职责切分（三层分离的价值）",
+      "items": [
+        "Gateway 粗鉴权：这个 API key 认不认（unknown → 401 边缘拒绝）",
+        "Runtime 细鉴权：这个用户能不能调这个工具（执行点判定）",
+        "bob(viewer) 调 reset_cache：Gateway 放行，Runtime 执行点 DENIED",
+        "每次调用带 X-Trace-Id 串三层 + 落 audit.jsonl（数据面留痕）"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "两个 Gateway 变体对比",
+      "items": [
+        "native：mount(create_proxy) 一行/后端 + middleware 注入身份（声明式）",
+        "explicit：手写 _forward 鉴权→连后端→call_tool（逐跳可见）",
+        "两者行为一致；区别在转发是黑盒还是手写"
+      ]
+    }
+  ]
+}
