@@ -77,11 +77,23 @@ def register_runtime(
         )
 
 
-def call_mcp(url: str, api_key: str, tool: str, args: dict[str, object]) -> tuple[str, bool]:
-    """以某 key 经 MCP 端点调一个 tool，返回 (文本, 是否抛异常)。"""
+def call_mcp(
+    url: str,
+    api_key: str,
+    tool: str,
+    args: dict[str, object],
+    trace_id: str | None = None,
+) -> tuple[str, bool]:
+    """以某 key 经 MCP 端点调一个 tool，返回 (文本, 是否抛异常)。
+
+    trace_id 非空时附带 X-Trace-Id 头（用于测全链路 trace 透传）。
+    """
 
     async def go() -> tuple[str, bool]:
-        transport = StreamableHttpTransport(url, headers={"Authorization": f"Bearer {api_key}"})
+        headers: dict[str, str] = {"Authorization": f"Bearer {api_key}"}
+        if trace_id:
+            headers["X-Trace-Id"] = trace_id
+        transport = StreamableHttpTransport(url, headers=headers)
         # try 包住整个 async 块：native 变体的 401 在 Client 初始化阶段（__aenter__）就抛
         # HTTPStatusError，必须连 `async with` 一起捕获，否则逸出。
         try:

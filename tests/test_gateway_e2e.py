@@ -70,3 +70,23 @@ def test_bad_key_rejected_at_gateway(gov_stack: None) -> None:
     """非法 key：Gateway 边缘 401，请求不进 Runtime。"""
     text, raised = call_mcp(GW_URL, "bad-key", "calc_add", {"a": 1, "b": 2})
     assert raised and "401" in text
+
+
+def test_trace_id_propagates_three_layers(gov_stack: None, capfd: pytest.CaptureFixture[str]) -> None:
+    """X-Trace-Id 经 Client→Gateway→Runtime 全链路：同一 trace 出现在 gateway + runtime 日志行 + audit。"""
+    trace = "e2e-trace-007"
+    text, raised = call_mcp(GW_URL, "key-alice", "weather_get_forecast", {"city": "上海"}, trace_id=trace)
+    assert not raised and "上海" in text
+
+    # capfd 在 fd 层捕获，连线程内的 server print 也能抓到（log_util 用 print→stderr, flush=True）
+    lines = capfd.readouterr().err.splitlines()
+    gw_hit = any(f"trace:{trace}" in ln and "🚪" in ln for ln in lines)
+    rt_hit = any(f"trace:{trace}" in ln and "⚙️" in ln for ln in lines)
+    assert gw_hit, f"trace {trace} 未出现在 gateway 日志"
+    assert rt_hit, f"trace {trace} 未出现在 runtime 日志"
+
+    # 顺带：runtime 审计行也带这个 trace（数据面留痕）
+    from core.config import OUTPUT_DIR
+
+    audit = (OUTPUT_DIR / "audit.jsonl").read_text(encoding="utf-8")
+    assert f'"trace": "{trace}"' in audit, f"trace {trace} 未出现在 audit.jsonl"

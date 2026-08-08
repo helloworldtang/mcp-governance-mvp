@@ -196,7 +196,7 @@ uv run ruff format .        # 格式化
 uv run mypy . --ignore-missing-imports   # 类型检查（strict）
 ```
 
-当前状态：`ruff check` 全过、`mypy strict` 零问题、20 个 pytest 通过、5/5 运行时回归通过。
+当前状态：`ruff check` 全过、`mypy strict` 零问题、22 个 pytest 通过、5/5 运行时回归通过。
 
 ## 开发 / 贡献
 
@@ -204,7 +204,7 @@ uv run mypy . --ignore-missing-imports   # 类型检查（strict）
 uv sync                                    # 装 dev 工具（ruff/mypy/pytest）
 uv run ruff check . && uv run ruff format --check .   # 提交前必过
 uv run mypy . --ignore-missing-imports     # strict 类型检查
-uv run pytest                              # 20 个测试，不起 LLM，~3s
+uv run pytest                              # 22 个测试，不起 LLM，~3.5s
 ```
 
 - 改代码规范、加 Runtime/Gateway、写测试等见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。

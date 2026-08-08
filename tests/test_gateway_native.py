@@ -75,3 +75,25 @@ def test_native_bad_key_rejected_at_gateway(native_stack: None) -> None:
     """非法 key：AuthInjectMiddleware 边缘 401，请求不进 Runtime。"""
     text, raised = call_mcp(GW_URL, "bad-key", "calc_add", {"a": 1, "b": 2})
     assert raised and "401" in text
+
+
+def test_native_trace_id_propagates_three_layers(native_stack: None, capfd: pytest.CaptureFixture[str]) -> None:
+    """【变体 A 承重点回归】X-Trace-Id 经 create_proxy 自动透传：gateway + runtime 日志 + audit 同 trace。
+
+    native 变体只手动注入 X-User/X-Role，X-Trace-Id 靠 create_proxy 透传入站 header。
+    这条测试保护那个「自动透传」不被破坏。
+    """
+    trace = "native-trace-042"
+    text, raised = call_mcp(GW_URL, "key-alice", "weather_get_forecast", {"city": "上海"}, trace_id=trace)
+    assert not raised and "上海" in text
+
+    lines = capfd.readouterr().err.splitlines()
+    gw_hit = any(f"trace:{trace}" in ln and "🚪" in ln for ln in lines)
+    rt_hit = any(f"trace:{trace}" in ln and "⚙️" in ln for ln in lines)
+    assert gw_hit, f"trace {trace} 未出现在 gateway 日志"
+    assert rt_hit, f"trace {trace} 未出现在 runtime 日志"
+
+    from core.config import OUTPUT_DIR
+
+    audit = (OUTPUT_DIR / "audit.jsonl").read_text(encoding="utf-8")
+    assert f'"trace": "{trace}"' in audit, f"trace {trace} 未出现在 audit.jsonl"
