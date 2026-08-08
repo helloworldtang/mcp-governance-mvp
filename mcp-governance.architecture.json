@@ -129,7 +129,7 @@
   "boundaries": [
     {
       "kind": "region",
-      "label": "Gateway 层 · native | explicit 二选一（run_demo.sh $1）",
+      "label": "Gateway 层 · native | explicit 二选一（run.sh 第一个参数）",
       "wraps": [
         "native",
         "explicit"

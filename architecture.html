@@ -4571,7 +4571,7 @@
 
         <!-- Boundaries (behind everything) -->
         <rect data-graph-role="structural-frame" data-composition-frame-kind="region" data-composition-frame-id="0" x="45" y="190" width="595" height="146" rx="12" class="c-region" stroke-width="1"/>
-        <text x="53" y="208" class="t-cloud" font-size="9" font-weight="600">Gateway 层 · native | explicit 二选一（run_demo.sh $1）</text>
+        <text x="53" y="208" class="t-cloud" font-size="9" font-weight="600">Gateway 层 · native | explicit 二选一（run.sh 第一个参数）</text>
 
         <rect data-graph-role="structural-frame" data-composition-frame-kind="security-group" data-composition-frame-id="1" x="45" y="402" width="595" height="132" rx="8" class="c-security-group" stroke-width="1"/>
         <text x="53" y="420" class="t-security" font-size="9" font-weight="600">Runtime 执行层 · FastMCP · per-user 鉴权</text>
@@ -4601,8 +4601,8 @@
         <text data-detail="fine" x="200" y="96" class="t-frontend" font-size="7" text-anchor="middle">调用方</text>
         </g>
 
-        <g id="node-native" data-node-id="native" data-node-label="Gateway · native" tabindex="0" role="button" aria-label="Focus Gateway · native, mount(create_proxy) + AuthInjectMiddleware, Gateway 层 · native | explicit 二选一（run_demo.sh $1）" aria-pressed="false" data-node-kind="backend" data-node-sublabel="mount(create_proxy) + AuthInjectMiddleware" data-node-tag="声明式 · :8200" data-node-context="Gateway 层 · native | explicit 二选一（run_demo.sh $1）">
-          <title>Gateway · native · mount(create_proxy) + AuthInjectMiddleware · Gateway 层 · native | explicit 二选一（run_demo.sh $1） · 声明式 · :8200</title>
+        <g id="node-native" data-node-id="native" data-node-label="Gateway · native" tabindex="0" role="button" aria-label="Focus Gateway · native, mount(create_proxy) + AuthInjectMiddleware, Gateway 层 · native | explicit 二选一（run.sh 第一个参数）" aria-pressed="false" data-node-kind="backend" data-node-sublabel="mount(create_proxy) + AuthInjectMiddleware" data-node-tag="声明式 · :8200" data-node-context="Gateway 层 · native | explicit 二选一（run.sh 第一个参数）">
+          <title>Gateway · native · mount(create_proxy) + AuthInjectMiddleware · Gateway 层 · native | explicit 二选一（run.sh 第一个参数） · 声明式 · :8200</title>
           <rect x="75" y="220" width="250" height="96" rx="6" class="c-mask"/>
           <rect x="75" y="220" width="250" height="96" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(81 226) scale(0.6875)">
@@ -4613,8 +4613,8 @@
         <text data-detail="fine" x="200" y="308" class="t-backend" font-size="7" text-anchor="middle">声明式 · :8200</text>
         </g>
 
-        <g id="node-explicit" data-node-id="explicit" data-node-label="Gateway · explicit" tabindex="0" role="button" aria-label="Focus Gateway · explicit, 手写 _forward() 逐跳转发, Gateway 层 · native | explicit 二选一（run_demo.sh $1）" aria-pressed="false" data-node-kind="backend" data-node-sublabel="手写 _forward() 逐跳转发" data-node-tag="显式 · :8200" data-node-context="Gateway 层 · native | explicit 二选一（run_demo.sh $1）">
-          <title>Gateway · explicit · 手写 _forward() 逐跳转发 · Gateway 层 · native | explicit 二选一（run_demo.sh $1） · 显式 · :8200</title>
+        <g id="node-explicit" data-node-id="explicit" data-node-label="Gateway · explicit" tabindex="0" role="button" aria-label="Focus Gateway · explicit, 手写 _forward() 逐跳转发, Gateway 层 · native | explicit 二选一（run.sh 第一个参数）" aria-pressed="false" data-node-kind="backend" data-node-sublabel="手写 _forward() 逐跳转发" data-node-tag="显式 · :8200" data-node-context="Gateway 层 · native | explicit 二选一（run.sh 第一个参数）">
+          <title>Gateway · explicit · 手写 _forward() 逐跳转发 · Gateway 层 · native | explicit 二选一（run.sh 第一个参数） · 显式 · :8200</title>
           <rect x="360" y="220" width="250" height="96" rx="6" class="c-mask"/>
           <rect x="360" y="220" width="250" height="96" rx="6" class="c-backend" stroke-width="1.5"/>
           <g aria-hidden="true" data-semantic-sigil="backend" class="semantic-sigil s-backend" transform="translate(366 226) scale(0.6875)">
