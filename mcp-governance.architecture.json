@@ -30,7 +30,7 @@
           "registry",
           "calc"
         ],
-        "note": "Runtime 自注册；Gateway 启动时从 Registry 拉 /servers 建路由。"
+        "note": "Runtime 自注册；Gateway 周期从 Registry 拉 /servers 热刷新健康路由。"
       }
     ]
   },
@@ -217,7 +217,7 @@
       "id": "explicit-registry",
       "from": "explicit",
       "to": "registry",
-      "label": "④ GET /servers 拉目录建路由",
+      "label": "④ 周期 GET /servers 刷新路由",
       "variant": "dashed",
       "fromSide": "right",
       "toSide": "left"

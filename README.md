@@ -3,9 +3,9 @@
 [![CI](https://github.com/helloworldtang/mcp-governance-mvp/actions/workflows/ci.yml/badge.svg)](https://github.com/helloworldtang/mcp-governance-mvp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-Python 端到端 demo，把 MCP（Model Context Protocol）的**三层治理过程**完整跑给人看：发现 → 路由 → 执行。基于业界调研选型 **FastMCP + FastAPI**，做了**两个 Gateway 变体对比**（声明式 `mount(create_proxy)` vs 手写逐跳转发），用 **DeepSeek ReAct Agent** 当调用方，让治理流程在真实工具选择中显形。
+Python 端到端 MVP，把 MCP（Model Context Protocol）的**三层治理过程**完整跑给人看：发现 → 路由 → 执行。基于业界调研选型 **FastMCP + FastAPI**，做了**两个 Gateway 变体对比**（声明式 `mount(create_proxy)` vs 手写逐跳转发），用 **DeepSeek ReAct Agent** 当调用方，让治理流程在真实工具选择中显形。
 
-> **定位**：教学 MVP —— 架构与机制（三层切分、无状态协议、执行点 per-user 鉴权、数据面 trace+审计）与生产 **1:1 对得上**；但安全/可靠性横切（明文身份头、静态 key、无 TLS/限流/HA）是刻意的教学简化，**不是 drop-in 生产代码**。生产替换路径见末尾「扩展」。
+> **定位**：教学 MVP —— 展示与生产系统相同的三层职责、动态发现、执行点 per-user 鉴权和数据面 trace+审计；安全/可靠性横切仍是教学简化（静态 key、Gateway→Runtime 共享凭证、无 TLS/限流/HA），**不是 drop-in 生产代码**。生产替换路径见末尾「扩展」。
 
 > 三层成立的协议前提：2026-07-28 MCP 规范把协议改成**无状态、可路由、可缓存**的请求/响应模型（废弃 `initialize` 握手与 session id）。身份随每个请求走 header —— 这是 Gateway 能路由、Runtime 能做 per-user 鉴权的根基。本 demo 全程 `stateless_http=True`。
 
@@ -28,7 +28,7 @@ Python 端到端 demo，把 MCP（Model Context Protocol）的**三层治理过�
         │             + AuthInjectMiddleware 注入身份     │
         │  explicit = 手写 _forward() 逐跳转发           │  gateway/explicit_proxy.py
         └──────────────┬───────────────────────────────┘
-                       │ 启动时 GET /servers 拉目录，按 namespace 路由
+                       │ 周期 GET /servers 刷新健康路由，按 namespace 转发
                        ▼
         ┌──────────────────────────────────────────────┐
         │ Registry (FastAPI :8100)                     │  registry/server.py
@@ -60,7 +60,7 @@ Python 端到端 demo，把 MCP（Model Context Protocol）的**三层治理过�
 | 能力 | 位置 | 说明 |
 |---|---|---|
 | **Registry** 注册/发现 | `registry/server.py:73` `register`、`:88` `servers` | Runtime 自荐 + Gateway 拉目录 |
-| Registry 周期心跳 | `registry/server.py:37` `_health_loop` | 标记 Runtime up/down，down 的不路由 |
+| Registry 周期心跳 | `registry/server.py` `_health_loop` | 标记 Runtime up/down，Gateway 动态摘除 down 路由 |
 | **Runtime** 执行点鉴权 | `runtime/authz.py:14` `current_identity`、`:24` `require_admin` | 读 X-User/X-Role，admin 门禁抛 `ToolError` |
 | Runtime read 工具 | `runtime/weather.py:42` `get_forecast`、`runtime/calc.py:28` `add` | 任何身份可调 |
 | Runtime admin 工具 | `runtime/weather.py:52` `reset_cache` | 仅 admin；viewer 在执行点被拒 |
@@ -72,6 +72,7 @@ Python 端到端 demo，把 MCP（Model Context Protocol）的**三层治理过�
 | **Client** DeepSeek Agent | `client/agent.py:75` `create_react_agent` | langgraph ReAct 选工具 |
 | Client 带身份连网关 | `client/agent.py:43` `MultiServerMCPClient` | transport=http + Authorization 头 |
 | 身份映射 | `core/config.py:28` `API_KEYS` | key-alice→admin · key-bob→viewer |
+| Runtime 身份防伪 | `core/config.py` `GATEWAY_RUNTIME_TOKEN` | 仅信任带网关凭证的 X-User/X-Role；生产换 mTLS/JWT |
 | **数据面 trace** | `client/agent.py` `run_task` 生成 `X-Trace-Id` | Gateway 透传，Runtime 连同身份打日志 |
 | **数据面审计** | `core/audit.py` → `output/audit.jsonl` | 每次 allow/deny 落 JSONL（Runtime 审计职责） |
 
@@ -173,6 +174,109 @@ export DEEPSEEK_API_KEY=sk-...   # 或写进 .env（看 .env.example）
 ./compare_gateways.sh "查一下北京天气" --user bob
 ```
 
+## 分别启动每一层
+
+一键脚本适合看结果；第一次学习建议开 5 个终端，按依赖顺序逐层启动。所有命令都在项目根目录执行。
+
+```bash
+# 首次运行只需执行一次
+uv sync
+
+# Agent 终端需要；也可以先 `source .env`，但不要提交真实 key
+export DEEPSEEK_API_KEY=sk-...
+```
+
+**终端 1：Registry（控制面目录，:8100）**
+
+```bash
+uv run python -m registry.server
+```
+
+**终端 2：weather Runtime（执行面，:8300）**
+
+```bash
+uv run python -m runtime.weather
+```
+
+**终端 3：calc Runtime（执行面，:8301）**
+
+```bash
+uv run python -m runtime.calc
+```
+
+两个 Runtime 启动时会 `POST /register`。确认控制面已经发现它们：
+
+```bash
+curl -s http://127.0.0.1:8100/servers | python -m json.tool
+```
+
+**终端 4：Gateway（数据面入口，:8200，二选一）**
+
+```bash
+# 手写逐跳转发，最适合学习
+uv run python -m gateway.explicit_proxy
+
+# 或：FastMCP 声明式代理
+# uv run python -m gateway.fastmcp_native
+```
+
+Gateway 启动时读取一次 Registry，此后每秒刷新健康路由。Registry 心跳将 Runtime 标记为 down 后，Gateway 会动态摘除对应 namespace；恢复或新注册后会重新挂载。
+
+**终端 5：启动 Agent 并下发任务**
+
+```bash
+export DEEPSEEK_API_KEY=sk-...
+
+# viewer 调 read 工具：成功
+uv run python -m client.run "查一下上海天气" --user bob
+
+# viewer 调 admin 工具：在 Runtime 执行点拒绝
+uv run python -m client.run "把天气缓存清掉" --user bob
+
+# admin 执行同一任务：成功
+uv run python -m client.run "把天气缓存清掉" --user alice
+```
+
+停止某个 Runtime 后，等待约 5 秒让 Registry 心跳发现，再观察 Registry 和 Gateway：
+
+```bash
+curl -s http://127.0.0.1:8100/servers | python -m json.tool
+```
+
+## MCP 全链路生命周期：从启动 Agent 到完成任务
+
+下面以 `bob 查上海天气` 为例。一次任务生成一个 trace ID，例如 `8a275f`，它会贯穿 Client、Gateway、Runtime 和审计日志。
+
+1. **CLI 接收任务**：`client/run.py` 校验 `DEEPSEEK_API_KEY`，解析任务文本和 `--user bob`，然后调用 `run_task()`。
+2. **建立调用身份**：Client 将 `bob` 映射为 `key-bob`（viewer），生成 trace ID，创建指向 `http://127.0.0.1:8200/mcp` 的 MCP Client；每个请求携带 `Authorization: Bearer key-bob` 和 `X-Trace-Id`。
+3. **MCP 工具发现（`tools/list`）**：`client.get_tools()` 向 Gateway 请求工具清单。Gateway 已从 Registry 聚合健康 Runtime，因此返回 `weather_get_forecast`、`weather_reset_cache`、`calc_add`、`calc_multiply` 及其 JSON Schema。
+4. **MCP→Agent 工具适配**：`langchain-mcp-adapters` 把 MCP Tool 定义转换成 LangChain Tool；`create_react_agent()` 用这些工具和 DeepSeek 组装 ReAct Agent。
+5. **向 LLM 下发任务**：Agent 把用户消息和可用工具描述发送给 DeepSeek。LLM 判断需要天气工具，生成结构化 tool call：`weather_get_forecast(city="上海")`。此时只是做出调用决策，还没有执行工具。
+6. **MCP 工具调用（`tools/call`）**：Agent 执行该 LangChain Tool，adapter 将它编码成 MCP `tools/call` 请求并发送到 Gateway；Authorization 和同一个 trace ID 随请求传递。
+7. **Gateway 粗鉴权与路由**：Gateway 验证 `key-bob`，得到 `bob(viewer)`；根据 `weather_` namespace 选择 weather Runtime，并注入 `X-User`、`X-Role`、`X-Trace-Id` 和内部 `X-Gateway-Token`。
+8. **Runtime 身份验证与执行点授权**：Runtime 先验证 `X-Gateway-Token`，再读取用户角色。`get_forecast` 是 read 工具，所以 viewer 被允许；若调用 `reset_cache`，则在这里返回 `DENIED`。直连 Runtime 伪造 `X-Role: admin` 会因缺少网关凭证降级为 anonymous/viewer。
+9. **执行、trace 与审计**：Runtime 查询天气缓存，打印带 trace 的执行日志，并向 `output/audit.jsonl` 追加 allow/deny 记录，然后产生 MCP Tool Result。
+10. **结果逐跳返回**：Runtime Tool Result → Gateway → MCP adapter → LangGraph，成为 ReAct 循环中的 `ToolMessage` / Observation。
+11. **Agent 继续推理**：DeepSeek 读取 Observation。如果任务已经完成，它生成最终自然语言答复；复杂任务也可以再次触发 `tools/call`，重复步骤 5–10。
+12. **任务收尾**：Client 打印 ACTION、OBSERVE 和最终答复，并将完整结果写入 `output/<时间戳>.<user>.txt`。同一 trace ID 可在各层日志和 `audit.jsonl` 中关联整次调用。
+
+协议与控制流可简写为：
+
+```text
+用户任务
+  → client.run / run_task
+  → MCP tools/list → Gateway → 健康工具目录
+  → DeepSeek 选择工具
+  → MCP tools/call + Authorization + trace
+  → Gateway 粗鉴权 + namespace 路由 + 可信身份注入
+  → Runtime 执行点细鉴权 + 工具执行 + audit
+  → MCP Tool Result / Observation
+  → DeepSeek 最终答复（或继续调用工具）
+  → Client 输出并保存转写
+```
+
+这里有两条同时运行但职责不同的链：Registry 心跳与 Gateway 路由刷新属于**控制面生命周期**；`tools/list`、`tools/call`、Tool Result 和 Agent ReAct 循环属于**数据面生命周期**。工具载荷不会经过 Registry。
+
 每次运行的 Agent 转写落在 `output/<时间戳>.<user>.txt`；各层进程日志在 `/tmp/mcp_{registry,weather,calc,gateway}.log`。
 
 ## 避坑（踩出来的，都在代码里有注释）
@@ -196,7 +300,7 @@ uv run ruff format .        # 格式化
 uv run mypy . --ignore-missing-imports   # 类型检查（strict）
 ```
 
-当前状态：`ruff check` 全过、`mypy strict` 零问题、22 个 pytest 通过、5/5 运行时回归通过。
+当前状态：`ruff check` 全过、`mypy strict` 零问题、26 个 pytest 通过。
 
 ## 开发 / 贡献
 
@@ -204,7 +308,7 @@ uv run mypy . --ignore-missing-imports   # 类型检查（strict）
 uv sync                                    # 装 dev 工具（ruff/mypy/pytest）
 uv run ruff check . && uv run ruff format --check .   # 提交前必过
 uv run mypy . --ignore-missing-imports     # strict 类型检查
-uv run pytest                              # 22 个测试，不起 LLM，~3.5s
+uv run pytest                              # 26 个测试，不起 LLM，~3.5s
 ```
 
 - 改代码规范、加 Runtime/Gateway、写测试等见 [`CONTRIBUTING.md`](CONTRIBUTING.md)。
@@ -243,9 +347,9 @@ mcp/
 
 - **替换 Runtime 为 Arcade**：把 `runtime/*.py` 换成 Arcade 托管的工具，Gateway 不变 —— Arcade 替你做 per-user OAuth + token 托管，本 demo 的 `require_admin` 那一层就由 Arcade 接管。
 - **替换 Runtime 为 Cloudflare McpAgent + Durable Objects**：把 `runtime/*.py` 部署到 Workers，per-user token 存 Durable Object；Gateway 仍连 `url`。
-- **Registry 持久化 / Gateway 缓存限流**：本 demo 刻意省略（内存 Registry、无缓存无限流）。生产 Gateway 的横切关注点在 `gateway/*.py` 留了 TODO 锚点。
+- **Registry 持久化 / Gateway 缓存限流**：本 demo 已有健康路由热刷新，但仍刻意省略持久化、限流和 HA。生产 Gateway 的横切关注点在 `gateway/*.py` 留了 TODO 锚点。
+- **替换内部身份凭证**：当前 `GATEWAY_RUNTIME_TOKEN` 只防止教学环境中直接伪造身份头；生产应让 Runtime 只接受网关网络入口，并使用 mTLS 或短时签名 JWT。
 
 ## License
 
 [MIT](LICENSE) © Jackie
-

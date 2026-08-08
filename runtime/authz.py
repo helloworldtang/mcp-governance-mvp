@@ -16,6 +16,8 @@ get_http_request() 能在 tool 内读到原始请求头（HTTP transport 下，�
 from fastmcp.exceptions import ToolError
 from fastmcp.server.dependencies import get_http_request
 
+from core.config import GATEWAY_RUNTIME_TOKEN
+
 
 def current_identity() -> tuple[str, str, str]:
     """返回 (user, role, trace)。读不到（直连、或 Gateway 未注入）时回退 anonymous/viewer。"""
@@ -23,9 +25,11 @@ def current_identity() -> tuple[str, str, str]:
     if req is None:
         return "anonymous", "viewer", "-"
     h = {k.lower(): v for k, v in req.headers.items()}  # 头全小写化，便于大小写不敏感取值
+    trace = h.get("x-trace-id", "-")
+    if h.get("x-gateway-token") != GATEWAY_RUNTIME_TOKEN:
+        return "anonymous", "viewer", trace
     user = h.get("x-user", "anonymous")
     role = h.get("x-role", "viewer")
-    trace = h.get("x-trace-id", "-")
     return user, role, trace
 
 

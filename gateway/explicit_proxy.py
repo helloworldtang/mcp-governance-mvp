@@ -22,6 +22,8 @@
 
 import asyncio
 import inspect
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 from typing import Any
 
 import httpx
@@ -34,14 +36,35 @@ from fastmcp.tools import FunctionTool
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from core.config import API_KEYS, GATEWAY_PORT, REGISTRY_URL
+from core.config import (
+    API_KEYS,
+    GATEWAY_PORT,
+    GATEWAY_REFRESH_INTERVAL,
+    GATEWAY_RUNTIME_TOKEN,
+    REGISTRY_URL,
+)
 from core.log_util import log_gateway
 
-# 构造一个 MCP server 实例（≈ new 一个服务对象）；它对外暴露工具，对内连后端
-gw = FastMCP("gateway-explicit")
 
-# namespace → 后端 MCP url（启动时从 Registry 拉）。dict ≈ Java HashMap，模块级变量 ≈ static 字段
+@asynccontextmanager
+async def _lifespan(_server: FastMCP[Any]) -> AsyncIterator[None]:
+    """启动路由刷新任务，并在 Gateway 退出时取消。"""
+    task = asyncio.create_task(_refresh_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+# 构造一个 MCP server 实例（≈ new 一个服务对象）；它对外暴露工具，对内连后端
+gw = FastMCP("gateway-explicit", lifespan=_lifespan)
+
+# namespace → 健康后端 MCP url（按 Registry 快照刷新）。dict ≈ Java HashMap，模块级变量 ≈ static 字段
 _backends: dict[str, str] = {}
+_registered_tools: dict[str, set[str]] = {}
+_route_lock = asyncio.Lock()
 
 # JSON Schema type → Python type（重建代理 tool 签名用）。常量全大写 ≈ Java static final
 _TYPE_MAP = {
@@ -88,7 +111,15 @@ async def _forward(namespace: str, tool_name: str, arguments: dict[str, Any]) ->
     url = _backends[namespace]
     log_gateway(f"路由 {namespace}_{tool_name} → {url}   身份 {user}({role})", trace=trace)
     # 构造到后端的 MCP 客户端 transport（指定 url + 随请求带的自定义头）
-    transport = StreamableHttpTransport(url, headers={"X-User": user, "X-Role": role, "X-Trace-Id": trace})
+    transport = StreamableHttpTransport(
+        url,
+        headers={
+            "X-User": user,
+            "X-Role": role,
+            "X-Trace-Id": trace,
+            "X-Gateway-Token": GATEWAY_RUNTIME_TOKEN,
+        },
+    )
     async with Client(transport) as bc:  # 建立连接；离开 with 自动断开（≈ try-with-resources）
         result = await bc.call_tool(tool_name, arguments)  # 远程调用后端工具，await 等结果
     # result.content 是返回内容列表（MCP 工具可返回多段）；这里取第一段的文本
@@ -148,23 +179,56 @@ async def _health(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "variant": "explicit", "backends": list(_backends)})
 
 
-async def _bootstrap() -> None:
-    """启动时从 Registry 拉清单，为每个后端工具注册代理 tool。"""
+def _remove_namespace(namespace: str) -> None:
+    """移除某 Runtime 对应的全部本地代理工具。"""
+    for tool_name in _registered_tools.pop(namespace, set()):
+        gw.local_provider.remove_tool(tool_name)
+    _backends.pop(namespace, None)
+
+
+async def _sync_routes() -> None:
+    """按 Registry 当前健康快照增删路由。"""
     async with httpx.AsyncClient(timeout=5) as c:  # 异步 HTTP 客户端（≈ Java AsyncHttpClient）
         r = await c.get(f"{REGISTRY_URL}/servers")
+        r.raise_for_status()
         servers = r.json().get("servers", [])  # 解析 JSON 响应；.get(key, 默认值) 防 KeyError
-    if not servers:
-        log_gateway("Registry 里还没有 up 的 Runtime（先起 Runtime 再起 Gateway）", "✘")
-    for srv in servers:  # 遍历每个已注册的后端 Runtime
-        ns, url = srv["namespace"], srv["url"]
-        _backends[ns] = url
-        # 连后端，列出它有哪些工具（拿到每个工具的 name + inputSchema）
-        async with Client(StreamableHttpTransport(url)) as bc:
-            tools = await bc.list_tools()
-        for t in tools:
-            # 为每个后端工具造一个本地代理 tool 并注册到网关
-            gw.add_tool(_build_proxy_tool(ns, t.name, t.inputSchema, t.description or t.name))
-        log_gateway(f"注册 {len(tools)} 个代理 tool ← {ns}({url})", "📖")
+    desired = {str(server["namespace"]): str(server["url"]) for server in servers}
+
+    async with _route_lock:
+        for namespace in set(_backends) - set(desired):
+            _remove_namespace(namespace)
+            log_gateway(f"摘除 down Runtime → {namespace}", "✘")
+
+        for namespace, url in desired.items():
+            if _backends.get(namespace) == url:
+                continue
+            if namespace in _backends:
+                _remove_namespace(namespace)
+            async with Client(StreamableHttpTransport(url)) as backend_client:
+                tools = await backend_client.list_tools()
+            names: set[str] = set()
+            for tool in tools:
+                proxy = _build_proxy_tool(namespace, tool.name, tool.inputSchema, tool.description or tool.name)
+                gw.add_tool(proxy)
+                names.add(proxy.name)
+            _backends[namespace] = url
+            _registered_tools[namespace] = names
+            log_gateway(f"注册 {len(tools)} 个代理 tool ← {namespace}({url})", "📖")
+
+
+async def _refresh_loop() -> None:
+    """周期同步 Registry；短暂控制面故障时保留上一份可用路由。"""
+    while True:
+        try:
+            await _sync_routes()
+        except Exception as exc:
+            log_gateway(f"刷新 Registry 失败，保留现有路由: {exc}", "✘")
+        await asyncio.sleep(GATEWAY_REFRESH_INTERVAL)
+
+
+async def _bootstrap() -> None:
+    """启动时完成首次路由同步。"""
+    await _sync_routes()
 
 
 if __name__ == "__main__":

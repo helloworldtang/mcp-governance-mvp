@@ -18,18 +18,37 @@
 """
 
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
+from typing import Any
 
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server import create_proxy
+from fastmcp.server.providers import Provider
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from core.config import API_KEYS, GATEWAY_PORT, REGISTRY_URL
+from core.config import API_KEYS, GATEWAY_PORT, GATEWAY_REFRESH_INTERVAL, GATEWAY_RUNTIME_TOKEN, REGISTRY_URL
 from core.log_util import log_gateway
 
-gw = FastMCP("gateway-native")
+
+@asynccontextmanager
+async def _lifespan(_server: FastMCP[Any]) -> AsyncIterator[None]:
+    """启动路由刷新任务，并在 Gateway 退出时取消。"""
+    task = asyncio.create_task(_refresh_loop())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+
+
+gw = FastMCP("gateway-native", lifespan=_lifespan)
+_mounted: dict[str, tuple[str, Provider]] = {}
+_route_lock = asyncio.Lock()
 
 
 class AuthInjectMiddleware:
@@ -65,6 +84,7 @@ class AuthInjectMiddleware:
             scope["headers"] = list(scope.get("headers", [])) + [
                 (b"x-user", ident["user"].encode()),
                 (b"x-role", ident["role"].encode()),
+                (b"x-gateway-token", GATEWAY_RUNTIME_TOKEN.encode()),
             ]
             log_gateway(
                 f"鉴权 {ident['user']}({ident['role']}) → 注入身份（trace 随请求透传）",
@@ -82,16 +102,44 @@ class AuthInjectMiddleware:
         log_gateway(f"401 拒绝未知 key '{key[:12] or '<空>'}'", "🔒", "✘")
 
 
-async def _bootstrap() -> None:
-    """启动时拉 Registry，对每个 Runtime 一行 mount(create_proxy)。"""
+async def _sync_routes() -> None:
+    """按 Registry 当前健康快照动态增删 proxy provider。"""
     async with httpx.AsyncClient(timeout=5) as c:
         r = await c.get(f"{REGISTRY_URL}/servers")
+        r.raise_for_status()
         servers = r.json().get("servers", [])
-    for srv in servers:
-        ns, url = srv["namespace"], srv["url"]
-        # 声明式核心：mount 一个 proxy 后端，namespace 给工具名加前缀（weather_*, calc_*）
-        gw.mount(create_proxy(url), namespace=ns)
-        log_gateway(f"mount(create_proxy({url}), namespace={ns})", "📖")
+    desired = {str(server["namespace"]): str(server["url"]) for server in servers}
+
+    async with _route_lock:
+        for namespace in set(_mounted) - set(desired):
+            _, provider = _mounted.pop(namespace)
+            gw.providers.remove(provider)
+            log_gateway(f"摘除 down Runtime → {namespace}", "✘")
+
+        for namespace, url in desired.items():
+            current = _mounted.get(namespace)
+            if current is not None and current[0] == url:
+                continue
+            if current is not None:
+                gw.providers.remove(current[1])
+            gw.mount(create_proxy(url), namespace=namespace)
+            _mounted[namespace] = (url, gw.providers[-1])
+            log_gateway(f"mount(create_proxy({url}), namespace={namespace})", "📖")
+
+
+async def _refresh_loop() -> None:
+    """周期同步 Registry；短暂控制面故障时保留上一份可用路由。"""
+    while True:
+        try:
+            await _sync_routes()
+        except Exception as exc:
+            log_gateway(f"刷新 Registry 失败，保留现有路由: {exc}", "✘")
+        await asyncio.sleep(GATEWAY_REFRESH_INTERVAL)
+
+
+async def _bootstrap() -> None:
+    """启动时完成首次路由同步。"""
+    await _sync_routes()
 
 
 @gw.custom_route("/health", methods=["GET"])

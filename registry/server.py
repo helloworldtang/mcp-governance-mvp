@@ -45,21 +45,25 @@ class RegisterReq(BaseModel):
     capabilities: list[str] = []
 
 
+async def _check_health_once(client: httpx.AsyncClient) -> None:
+    """检查一轮 Runtime 健康状态并更新目录。"""
+    for name, info in list(_catalog.items()):
+        try:
+            response = await client.get(str(info["health_url"]))
+            up = response.status_code == 200
+        except Exception:  # 连不上视为 down（粗粒度捕获；生产要区分超时/拒绝）
+            up = False
+        was_up = info.get("up")
+        info["up"] = up
+        if was_up != up and was_up is not None:
+            log_registry(f"{name} 健康 → {'up' if up else 'down'}", "✔" if up else "✘")
+
+
 async def _health_loop() -> None:
     """后台周期性 ping 每个 Runtime 的 health_url，标记 up/down。"""
     async with httpx.AsyncClient(timeout=2.0) as client:  # 异步 HTTP 客户端，离开 with 自动关闭
         while True:
-            # list(...) 拷一份再遍历，避免遍历中改 dict 报错（≈ Java 边遍历边删的 ConcurrentModification）
-            for name, info in list(_catalog.items()):
-                try:
-                    r = await client.get(str(info["health_url"]))
-                    up = r.status_code == 200
-                except Exception:  # 连不上视为 down（粗粒度捕获；生产要区分超时/拒绝）
-                    up = False
-                was_up = info.get("up")
-                info["up"] = up
-                if was_up != up and was_up is not None:  # 状态翻转才打日志，避免刷屏
-                    log_registry(f"{name} 健康 → {'up' if up else 'down'}", "✔" if up else "✘")
+            await _check_health_once(client)
             await asyncio.sleep(REGISTRY_HEALTH_INTERVAL)  # 异步 sleep（不阻塞线程）
 
 

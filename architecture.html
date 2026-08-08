@@ -4501,7 +4501,7 @@
       <p class="subtitle">FastMCP + FastAPI · 两个 Gateway 变体 · DeepSeek ReAct Agent 调用 · per-user 鉴权</p>
     </div>
 
-    <script id="archify-guided-views-data" type="application/json">[{"id":"data-path","label":"请求主路：Client→Gateway→Runtime","focus":["client","native","weather"],"note":"Authorization 在 Gateway 终结，X-User/X-Role 注入后透传到 Runtime 执行点。"},{"id":"discovery","label":"发现与治理：Registry","focus":["explicit","registry","calc"],"note":"Runtime 自注册；Gateway 启动时从 Registry 拉 /servers 建路由。"}]</script>
+    <script id="archify-guided-views-data" type="application/json">[{"id":"data-path","label":"请求主路：Client→Gateway→Runtime","focus":["client","native","weather"],"note":"Authorization 在 Gateway 终结，X-User/X-Role 注入后透传到 Runtime 执行点。"},{"id":"discovery","label":"发现与治理：Registry","focus":["explicit","registry","calc"],"note":"Runtime 自注册；Gateway 周期从 Registry 拉 /servers 热刷新健康路由。"}]</script>
 
     <div class="guided-views no-print" id="guided-views" hidden aria-label="Guided diagram views">
       <button id="guided-view-prev" type="button" aria-label="Previous guided view" title="Previous guided view ([)">&#8592;</button>
@@ -4583,7 +4583,7 @@
         <path data-edge-from="explicit" data-edge-to="calc" data-edge-label="② 注入 X-User / X-Role 透传" data-edge-key="3" data-edge-id="explicit-calc" data-composition-points="485,316;485,432" d="M 485 316 L 485 432" class="a-security" stroke-width="1.5" marker-end="url(#arrowhead-security)"/>
         <path data-edge-from="calc" data-edge-to="registry" data-edge-label="③ 自注册 POST /register" data-edge-key="4" data-edge-id="calc-registry" data-composition-points="610,473;715,473;715,275;820,275" d="M 610 473 L 707 473 Q 715 473 715 465 L 715 283 Q 715 275 723 275 L 820 275" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
         <path data-edge-from="weather" data-edge-to="registry" data-edge-label="③ 自注册" data-edge-key="5" data-edge-id="weather-registry" data-composition-points="200,514;195,600;925,600;925,309" d="M 200 514 L 195.4643321720368 592.013486640967 Q 195 600 203 600 L 917 600 Q 925 600 925 592 L 925 309" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
-        <path data-edge-from="explicit" data-edge-to="registry" data-edge-label="④ GET /servers 拉目录建路由" data-edge-key="6" data-edge-id="explicit-registry" data-composition-points="610,268;715,268;715,261;820,261" d="M 610 268 L 711.5 268 Q 715 268 715 264.5 L 715 264.5 Q 715 261 718.5 261 L 820 261" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
+        <path data-edge-from="explicit" data-edge-to="registry" data-edge-label="④ 周期 GET /servers 刷新路由" data-edge-key="6" data-edge-id="explicit-registry" data-composition-points="610,268;715,268;715,261;820,261" d="M 610 268 L 711.5 268 Q 715 268 715 264.5 L 715 264.5 Q 715 261 718.5 261 L 820 261" class="a-dashed" stroke-width="1.5" marker-end="url(#arrowhead-dashed)"/>
 
         <!-- Components -->
         <g id="node-client" data-node-id="client" data-node-label="DeepSeek ReAct Agent" tabindex="0" role="button" aria-label="Focus DeepSeek ReAct Agent, Client · 选工具 + 带 Authorization, Architecture component" aria-pressed="false" data-node-kind="frontend" data-node-sublabel="Client · 选工具 + 带 Authorization" data-node-tag="调用方" data-node-context="Architecture component">
@@ -4686,9 +4686,9 @@
           <rect x="535.8" y="580" width="48.4" height="14" rx="3" class="c-mask"/>
           <text x="560" y="590" class="t-messagebus" font-size="8" text-anchor="middle">③ 自注册</text>
         </g>
-        <g data-detail="context" data-edge-from="explicit" data-edge-to="registry" data-edge-label="④ GET /servers 拉目录建路由" data-edge-key="6" data-edge-id="explicit-registry">
+        <g data-detail="context" data-edge-from="explicit" data-edge-to="registry" data-edge-label="④ 周期 GET /servers 刷新路由" data-edge-key="6" data-edge-id="explicit-registry">
           <rect x="645.2" y="244.5" width="139.6" height="14" rx="3" class="c-mask"/>
-          <text x="715" y="254.5" class="t-messagebus" font-size="8" text-anchor="middle">④ GET /servers 拉目录建路由</text>
+          <text x="715" y="254.5" class="t-messagebus" font-size="8" text-anchor="middle">④ 周期 GET /servers 刷新路由</text>
         </g>
 
         <!-- Legend -->

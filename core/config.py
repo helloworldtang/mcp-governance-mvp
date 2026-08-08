@@ -30,6 +30,7 @@ HDR_USER = "X-User"
 HDR_ROLE = "X-Role"
 HDR_AUTH = "Authorization"
 HDR_TRACE = "X-Trace-Id"  # 全链路 trace：Client 生成，Gateway 透传，Runtime 连同身份一起打
+HDR_GATEWAY_TOKEN = "X-Gateway-Token"
 
 # === 身份映射（教学用：静态 key→{user,role}，替代真实 OAuth）===
 #   admin  = 全部工具可调（含 admin 标签）
@@ -38,6 +39,9 @@ API_KEYS: dict[str, dict[str, str]] = {
     "key-alice": {"user": "alice", "role": "admin"},
     "key-bob": {"user": "bob", "role": "viewer"},
 }
+
+# Runtime 用它确认身份头确实由可信 Gateway 注入。生产应替换为 mTLS 或签名 JWT。
+GATEWAY_RUNTIME_TOKEN = os.environ.get("GATEWAY_RUNTIME_TOKEN", "mcp-governance-demo-gateway")
 
 # 工具标签口径（Runtime 打标、Gateway 可据此过滤）
 TAG_READ = "read"
@@ -58,6 +62,7 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 
 # === Registry 心跳间隔（后台任务用）===
 REGISTRY_HEALTH_INTERVAL = 5.0  # 秒
+GATEWAY_REFRESH_INTERVAL = 1.0  # 秒；Gateway 刷新 Registry 路由快照
 
 # === 输出（与 sibling demo 一致：时间戳转写落在项目根 output/）===
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

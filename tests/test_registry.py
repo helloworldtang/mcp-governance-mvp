@@ -5,13 +5,15 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Iterator
 from typing import Any
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from registry.server import _catalog, app
+from registry.server import _catalog, _check_health_once, app
 
 
 @pytest.fixture
@@ -63,4 +65,20 @@ def test_unregister(client: TestClient) -> None:
 
 def test_servers_empty_when_nothing_registered(client: TestClient) -> None:
     """空目录时 /servers 返回空列表（Gateway 启动早于 Runtime 的边界情况）。"""
+    assert client.get("/servers").json()["servers"] == []
+
+
+def test_health_check_hides_down_runtime(client: TestClient) -> None:
+    """心跳失败后 Runtime 标记为 down，/servers 不再向 Gateway 返回它。"""
+    _register(client, "weather", "weather", 8300)
+
+    async def fail_health(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(503)
+
+    async def check() -> None:
+        transport = httpx.MockTransport(fail_health)
+        async with httpx.AsyncClient(transport=transport) as health_client:
+            await _check_health_once(health_client)
+
+    asyncio.run(check())
     assert client.get("/servers").json()["servers"] == []

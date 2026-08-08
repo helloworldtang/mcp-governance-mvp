@@ -51,11 +51,14 @@ echo "   ✔ Registry 就绪"
 echo "=== 2. 启动 Runtime: weather(:8300) + calc(:8301)（自注册到 Registry）==="
 uv run python -m runtime.weather > /tmp/mcp_weather.log 2>&1 &
 uv run python -m runtime.calc   > /tmp/mcp_calc.log   2>&1 &
+wait_url http://127.0.0.1:8300/health 40 || { echo "✘ weather Runtime 起不来"; exit 1; }
+wait_url http://127.0.0.1:8301/health 40 || { echo "✘ calc Runtime 起不来"; exit 1; }
 for i in $(seq 1 40); do
   n=$(curl -s http://127.0.0.1:8100/servers 2>/dev/null | python3 -c "import sys,json;print(len(json.load(sys.stdin)['servers']))" 2>/dev/null || echo 0)
   [ "$n" = "2" ] && break
   sleep 0.3
 done
+[ "$n" = "2" ] || { echo "✘ Registry 未发现全部 Runtime"; exit 1; }
 echo "   ✔ Registry 已发现 $n 个 Runtime"
 
 echo "=== 3. 启动 Gateway ($VARIANT, :8200) ==="

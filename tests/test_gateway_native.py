@@ -16,7 +16,8 @@ import pytest
 from fastmcp.client import Client
 from fastmcp.client.transports import StreamableHttpTransport
 
-from gateway.fastmcp_native import AuthInjectMiddleware, _bootstrap, gw
+from gateway.fastmcp_native import AuthInjectMiddleware, _bootstrap, _sync_routes, gw
+from registry.server import _catalog
 from tests._helpers import call_mcp, serve
 
 GW_URL = "http://127.0.0.1:8200/mcp"
@@ -97,3 +98,17 @@ def test_native_trace_id_propagates_three_layers(native_stack: None, capfd: pyte
 
     audit = (OUTPUT_DIR / "audit.jsonl").read_text(encoding="utf-8")
     assert f'"trace": "{trace}"' in audit, f"trace {trace} 未出现在 audit.jsonl"
+
+
+def test_down_runtime_is_removed_from_native_gateway(native_stack: None) -> None:
+    """Registry 标记 Runtime down 后，下一轮同步会摘除其 proxy provider。"""
+    _catalog["weather"]["up"] = False
+    asyncio.run(_sync_routes())
+
+    async def list_names() -> list[str]:
+        async with Client(StreamableHttpTransport(GW_URL, headers={"Authorization": "Bearer key-alice"})) as c:
+            return [tool.name for tool in await c.list_tools()]
+
+    assert not any(name.startswith("weather_") for name in asyncio.run(list_names()))
+    _catalog["weather"]["up"] = True
+    asyncio.run(_sync_routes())
