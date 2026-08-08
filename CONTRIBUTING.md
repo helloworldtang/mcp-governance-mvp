@@ -19,7 +19,7 @@ export DEEPSEEK_API_KEY=sk-... # 仅跑 run.sh（带 LLM 的端到端）时需�
 uv run ruff check .                       # 1. lint
 uv run ruff format --check .              # 2. 格式（改代码后跑 `ruff format .` 自动修）
 uv run mypy . --ignore-missing-imports    # 3. 类型（strict）
-uv run pytest                             # 4. 测试（14 个，不起 LLM，~2.5s）
+uv run pytest                             # 4. 测试（20 个，不起 LLM，~3s）
 ```
 
 CI（`.github/workflows/ci.yml`）会自动跑这四步；本地先过一遍省得来回。
