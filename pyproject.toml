@@ -1,7 +1,7 @@
 [project]
 name = "mcp-governance-mvp"
-version = "0.1.0"
-description = "MCP 三层治理 demo：Registry(发现) → Gateway(路由/鉴权) → Runtime(执行/per-user 鉴权) · FastMCP + FastAPI · 两个 Gateway 变体对比 · DeepSeek ReAct Agent 调用"
+version = "0.2.0"
+description = "MCP 三层治理 MVP：Registry(发现) → Gateway(路由/鉴权) → Runtime(执行/per-user 鉴权) · FastMCP + FastAPI · 两个 Gateway 变体对比 · DeepSeek ReAct Agent 调用"
 readme = "README.md"
 license = { text = "MIT" }
 authors = [{ name = "Jackie" }]

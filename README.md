@@ -1,4 +1,4 @@
-# MCP 三层治理 demo · Registry → Gateway → Runtime
+# MCP 三层治理 MVP · Registry → Gateway → Runtime
 
 [![CI](https://github.com/helloworldtang/mcp-governance-mvp/actions/workflows/ci.yml/badge.svg)](https://github.com/helloworldtang/mcp-governance-mvp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -7,7 +7,7 @@ Python 端到端 MVP，把 MCP（Model Context Protocol）的**三层治理过�
 
 > **定位**：教学 MVP —— 展示与生产系统相同的三层职责、动态发现、执行点 per-user 鉴权和数据面 trace+审计；安全/可靠性横切仍是教学简化（静态 key、Gateway→Runtime 共享凭证、无 TLS/限流/HA），**不是 drop-in 生产代码**。生产替换路径见末尾「扩展」。
 
-> 三层成立的协议前提：2026-07-28 MCP 规范把协议改成**无状态、可路由、可缓存**的请求/响应模型（废弃 `initialize` 握手与 session id）。身份随每个请求走 header —— 这是 Gateway 能路由、Runtime 能做 per-user 鉴权的根基。本 demo 全程 `stateless_http=True`。
+> 三层成立的协议前提：2026-07-28 MCP 规范把协议改成**无状态、可路由、可缓存**的请求/响应模型（废弃 `initialize` 握手与 session id）。身份随每个请求走 header —— 这是 Gateway 能路由、Runtime 能做 per-user 鉴权的根基。本 MVP 全程 `stateless_http=True`。
 
 ## 架构图
 
@@ -47,7 +47,7 @@ Python 端到端 MVP，把 MCP（Model Context Protocol）的**三层治理过�
 
 各层 best-in-class 不同，没有单一厂商三层都第一：
 
-| 层 | 生产级 best-in-class | 本 demo 对应 | 选型理由 |
+| 层 | 生产级 best-in-class | 本 MVP 对应 | 选型理由 |
 |---|---|---|---|
 | **Registry** 发现 | GitHub MCP Registry、Smithery、JFrog MCP | `registry/server.py` (FastAPI 内存目录) | Registry 本质是元数据目录 + 健康检查，自建最清晰；官方 Registry 还在成形期 |
 | **Gateway** 路由 | Microsoft **mcp-gateway**、Kong Konnect、Portkey、Tyk | `gateway/fastmcp_native.py` (`mount`+`create_proxy`) | FastMCP 把组合/代理/命名空间做成一等原语，几行就是 Gateway |
@@ -76,9 +76,9 @@ Python 端到端 MVP，把 MCP（Model Context Protocol）的**三层治理过�
 | **数据面 trace** | `client/agent.py` `run_task` 生成 `X-Trace-Id` | Gateway 透传，Runtime 连同身份打日志 |
 | **数据面审计** | `core/audit.py` → `output/audit.jsonl` | 每次 allow/deny 落 JSONL（Runtime 审计职责） |
 
-## 三层各自做了什么（职责切分，是本 demo 的核心）
+## 三层各自做了什么（职责切分，是本 MVP 的核心）
 
-| 层 | 关心 | 不关心 | demo 体现 |
+| 层 | 关心 | 不关心 | MVP 体现 |
 |---|---|---|---|
 | **Registry** | 有哪些工具/服务、它们活没活 | 请求怎么路由、怎么执行 | `GET /servers` 给 Gateway 建路由表 |
 | **Gateway** | 这个 key 合法吗（粗鉴权）、请求往哪转 | 工具具体怎么跑、用户能不能调 | 解析 Authorization → 注入身份 → 按 namespace 路由 |
@@ -90,7 +90,7 @@ Python 端到端 MVP，把 MCP（Model Context Protocol）的**三层治理过�
 
 三层治理拆开看，其实是两张"飞机"：
 
-| 面 | 承载 | 本 demo | 协议 |
+| 面 | 承载 | 本 MVP | 协议 |
 |---|---|---|---|
 | **控制面** | 元数据 + 策略（谁、能调什么、到哪） | Registry `/register` `/servers` `/health`、Gateway 的 `key→role` 映射 + 路由表、Runtime 鉴权规则 | REST |
 | **数据面** | 工具调用的真实载荷 `tools/call` | Client→Gateway→Runtime 的参数 + 结果流 | MCP streamable-http |
@@ -140,12 +140,25 @@ Python 端到端 MVP，把 MCP（Model Context Protocol）的**三层治理过�
 | 转发写法 | `gw.mount(create_proxy(url), namespace=ns)` 一行/后端 | `_forward()` 手写：解析身份 → 连后端 → `call_tool` |
 | 路由/命名空间 | FastMCP ProxyProvider 自动（黑盒） | 自己 list 后端工具 + 按 namespace 注册代理 tool |
 | 身份注入 | ASGI middleware 注入 X-User/X-Role，create_proxy 透传 | 每个 `_forward()` 显式塞进 `StreamableHttpTransport(headers=)` |
+| 上游连接 | 框架托管：`create_proxy` 走反向代理透传，连接由 ProxyProvider 管理 | 每次 `_forward()` 新建 `Client`（不复用，原因见下）|
 | 入参 schema | 自动透传后端 schema | `_build_proxy_tool` 按 inputSchema 重建签名（`__signature__`+`__annotations__`）|
 | Gateway 日志量 | 少（只有"就绪 + 鉴权注入"） | 多（每次调用"路由 → ←"两行，每跳可见）|
 | 代码量 | ~80 行（含 middleware） | ~120 行 |
 | 像谁 | 像用 FastMCP / Horizon 的开发者 | 像 Kong / Microsoft mcp-gateway 的实现 |
 
 跑 `./compare_gateways.sh "查一下北京天气" --user bob` 一眼看到差别：native 的 🚪 行很少（路由在黑盒），explicit 每跳都打日志。
+
+### 为什么变体 B 不能复用上游连接（抽象错配）
+
+变体 B 的 `_forward` 用 **MCP SDK 的 `Client` API**——语义是「一 Client = 一 MCP session = 一份身份」，headers 在建 session 时固化（`fastmcp/client/transports/http.py` 的 `connect_session`：`headers = dict(self.headers)`）。而本项目身份随每个请求走 header（`config.py` 协议契约 + `stateless_http=True`），每个请求身份不同 ⟹ 必须每请求独立 session、独立 Client。**复用 Client = 第二个请求套用第一个的身份 = 直接摧毁 per-user 鉴权**。
+
+这不是 MCP 的锅，也不是业界的锅：
+
+- **协议**：MCP [`2026-07-28` spec](https://blog.modelcontextprotocol.io/posts/2026-07-28/) 刻意 stateless-first，目标是让 MCP 成为 first-class HTTP workload——新增 `Mcp-Method`/`Mcp-Name` header，传统反向代理不解析 JSON-RPC body 即可路由/限流。
+- **业界**：微软 [`mcp-gateway`](https://github.com/microsoft/mcp-gateway) 自称 "production-ready reverse proxy"，`HttpProxy.CreateProxiedHttpRequest` **逐请求**构造转发——遍历头透传、`Authorization` 主动剥离防泄漏、注入 `Forwarded` 可信头、身份走 Entra ID Bearer + RBAC。连接池与 per-request 身份是正交两层，毫无冲突。
+- **变体 A**：`create_proxy` 就是这个反向代理抽象（ProxyProvider 流透传 + scope 注入身份），**没有这个死结**，与 mcp-gateway 同构。
+
+> 结论：纠结的是「拿客户端 SDK 拼 Gateway」这条路，不是 MCP。变体 B 让你亲手撞上抽象错配，从而理解为什么变体 A 和业界都选反向代理透传——这也是本 MVP 保留双变体的核心理由之一。
 
 ## 快速开始
 
@@ -173,6 +186,50 @@ export DEEPSEEK_API_KEY=sk-...   # 或写进 .env（看 .env.example）
 # 6. 两变体并排对比
 ./compare_gateways.sh "查一下北京天气" --user bob
 ```
+
+### 动态上下线演示（Registry 的存在价值）
+
+Registry 的全部意义 = Runtime 动态上下线。下面只用 `curl` + `kill`，肉眼可见 Gateway 路由表随 Runtime 状态自动伸缩（**控制面改动，数据面自动收敛**——这正是只有 Registry 才能提供、静态路由表给不了的能力）。
+
+手动起三层（不跑 Client；`run.sh` 跑完会清端口，不适合本演示）：
+
+```bash
+# 清旧进程
+for p in 8100 8200 8300 8301; do lsof -ti :$p 2>/dev/null | xargs kill -9 2>/dev/null; done
+
+uv run python -m registry.server         > /tmp/mcp_registry.log 2>&1 &
+uv run python -m runtime.weather         > /tmp/mcp_weather.log  2>&1 &
+uv run python -m runtime.calc            > /tmp/mcp_calc.log     2>&1 &
+uv run python -m gateway.explicit_proxy  > /tmp/mcp_gateway.log  2>&1 &
+sleep 3   # 等 Registry 心跳 + Gateway 首次拉目录
+```
+
+观察 → 下线 weather → 再观察：
+
+```bash
+# Registry 视角：weather + calc 都 up
+curl -s http://127.0.0.1:8100/servers | python3 -m json.tool
+
+# 下线 weather
+lsof -ti :8300 | xargs kill -9
+
+# ~5s 内（REGISTRY_HEALTH_INTERVAL=5）：Registry 标 weather down → 只剩 calc
+curl -s http://127.0.0.1:8100/servers | python3 -m json.tool
+
+# Gateway 视角：_sync_routes（GATEWAY_REFRESH_INTERVAL=1）周期刷新，weather_* 代理 tool 被摘除
+curl -s http://127.0.0.1:8200/health    # backends 只剩 calc
+```
+
+此刻任何 `weather_*` 调用都会路由失败，而 `calc_*` 不受影响——这就是"摘除 down Runtime"。重启 weather：
+
+```bash
+uv run python -m runtime.weather > /tmp/mcp_weather.log 2>&1 &
+# weather 自注册 → Registry 标 up → Gateway 重新挂上 weather_* 路由
+sleep 3
+curl -s http://127.0.0.1:8100/servers | python3 -m json.tool   # 又是两个
+```
+
+> 若你的部署里 Runtime 永远是静态固定的两个，这一整套（Registry + 自注册 + 双心跳循环）可全砍掉，换成 Gateway 内一份写死的路由表——**Registry 的存在价值就押在「动态」二字上**。
 
 ## 分别启动每一层
 
@@ -283,7 +340,7 @@ curl -s http://127.0.0.1:8100/servers | python -m json.tool
 
 1. **`get_http_headers()` 会剔除 `Authorization` 等标准头**。读鉴权头必须走 `get_http_request().headers`（原始请求头）。—— `gateway/explicit_proxy.py:39` 的注释。
 2. **FastMCP 的 `create_proxy` 会自动透传入站 HTTP header 到后端**（已验证：client 的 X-User 到了 weather）。所以变体 A 用 middleware 注入 X-User/X-Role，create_proxy 就能带到 Runtime。无需 fallback。
-3. **默认 streamable-http 是有状态的**（要 `Mcp-Session-Id`）。本 demo 全用 `mcp.http_app(stateless_http=True)`，对齐 2026-07-28 无状态协议，反代不必维护会话。
+3. **默认 streamable-http 是有状态的**（要 `Mcp-Session-Id`）。本 MVP 全用 `mcp.http_app(stateless_http=True)`，对齐 2026-07-28 无状态协议，反代不必维护会话。
 4. **动态代理 tool 要同时注入 `__signature__` 和 `__annotations__`**：FastMCP/pydantic 用 `get_type_hints`（读 `__annotations__`）+ `inspect.signature` 推导 schema，缺一不可。—— `gateway/explicit_proxy.py:72`。
 5. **进程清理按端口，别只靠 `pkill -f`**：模块名匹配偶尔漏，旧 Gateway 占着端口会让新进程 `Errno 48` 静默失败（client 连到旧代码）。`run.sh` 用 `lsof -ti :PORT | xargs kill`。
 6. **macOS 的 BSD sed 不支持 `\|` 交替**：脚本里过滤用 `grep -E`，别用 sed。
@@ -318,7 +375,7 @@ uv run pytest                              # 26 个测试，不起 LLM，~3.5s
 ## 目录
 
 ```
-mcp/
+mcp-governance-mvp/
 ├── core/
 │   ├── config.py          # 端口 / API_KEYS / header 契约（X-User/X-Role/X-Trace-Id）/ DeepSeek 配置
 │   ├── log_util.py        # 三层 emoji 日志（📖registry/🚪gateway/⚙️runtime/▶ACTION/◀OBSERVE），带 trace
@@ -345,9 +402,9 @@ mcp/
 
 ## 扩展（生产路径）
 
-- **替换 Runtime 为 Arcade**：把 `runtime/*.py` 换成 Arcade 托管的工具，Gateway 不变 —— Arcade 替你做 per-user OAuth + token 托管，本 demo 的 `require_admin` 那一层就由 Arcade 接管。
+- **替换 Runtime 为 Arcade**：把 `runtime/*.py` 换成 Arcade 托管的工具，Gateway 不变 —— Arcade 替你做 per-user OAuth + token 托管，本 MVP 的 `require_admin` 那一层就由 Arcade 接管。
 - **替换 Runtime 为 Cloudflare McpAgent + Durable Objects**：把 `runtime/*.py` 部署到 Workers，per-user token 存 Durable Object；Gateway 仍连 `url`。
-- **Registry 持久化 / Gateway 缓存限流**：本 demo 已有健康路由热刷新，但仍刻意省略持久化、限流和 HA。生产 Gateway 的横切关注点在 `gateway/*.py` 留了 TODO 锚点。
+- **Registry 持久化 / Gateway 缓存限流**：本 MVP 已有健康路由热刷新，但仍刻意省略持久化、限流和 HA。生产 Gateway 的横切关注点在 `gateway/*.py` 留了 TODO 锚点。
 - **替换内部身份凭证**：当前 `GATEWAY_RUNTIME_TOKEN` 只防止教学环境中直接伪造身份头；生产应让 Runtime 只接受网关网络入口，并使用 mTLS 或短时签名 JWT。
 
 ## License

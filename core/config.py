@@ -41,7 +41,7 @@ API_KEYS: dict[str, dict[str, str]] = {
 }
 
 # Runtime 用它确认身份头确实由可信 Gateway 注入。生产应替换为 mTLS 或签名 JWT。
-GATEWAY_RUNTIME_TOKEN = os.environ.get("GATEWAY_RUNTIME_TOKEN", "mcp-governance-demo-gateway")
+GATEWAY_RUNTIME_TOKEN = os.environ.get("GATEWAY_RUNTIME_TOKEN", "mcp-governance-MVP-gateway")
 
 # 工具标签口径（Runtime 打标、Gateway 可据此过滤）
 TAG_READ = "read"
@@ -64,6 +64,6 @@ DEEPSEEK_MODEL = os.environ.get("DEEPSEEK_MODEL", "deepseek-chat")
 REGISTRY_HEALTH_INTERVAL = 5.0  # 秒
 GATEWAY_REFRESH_INTERVAL = 1.0  # 秒；Gateway 刷新 Registry 路由快照
 
-# === 输出（与 sibling demo 一致：时间戳转写落在项目根 output/）===
+# === 输出（与 sibling MVP 一致：时间戳转写落在项目根 output/）===
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "output"

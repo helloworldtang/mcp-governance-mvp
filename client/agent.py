@@ -82,7 +82,7 @@ async def run_task(task: str, user: str) -> str:
     """以 {user} 身份执行任务，返回 Agent 的最终答复文本。一次任务一个 trace ID 串起三层。"""
     api_key = _key_for_user(user)
     role = API_KEYS[api_key]["role"]
-    trace_id = secrets.token_hex(3)  # 6 位 hex，够 demo 辨识
+    trace_id = secrets.token_hex(3)  # 6 位 hex，够 MVP 辨识
     log_client(f"身份 {user}(role={role})  任务: {task}", trace=trace_id)
 
     client = _mcp_client(api_key, trace_id)

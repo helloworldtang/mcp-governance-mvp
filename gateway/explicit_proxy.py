@@ -106,6 +106,14 @@ async def _forward(namespace: str, tool_name: str, arguments: dict[str, Any]) ->
     1. 解析入站身份 + trace（Gateway 层的粗鉴权）
     2. 用 X-User/X-Role/X-Trace-Id 连后端（把身份带到 Runtime 执行点）
     3. 调原始工具，回传文本
+
+    ⚠️ 为何每次都新建 Client、不复用连接？—— 抽象错配，不是疏忽。
+    FastMCP 的 Client 语义是「一 Client = 一 MCP session = 一份身份」，headers 在建 session
+    时固化（见 fastmcp/client/transports/http.py 的 connect_session：headers = dict(self.headers)）。
+    本项目身份随每个请求走 header（per-user 鉴权是核心卖点），复用 Client = 第二个请求套用第一个的
+    身份 = 串号 → 直接摧毁 bob/alice 隔离。业界（微软 mcp-gateway 等）走反向代理透传：连接池不绑身份
+    + per-request header，两者正交，无此矛盾。变体 A 的 create_proxy 就是反向代理抽象（ProxyProvider
+    流透传 + scope 注入身份），故无此死结。详见 README「为什么变体 B 不能复用上游连接」。
     """
     user, role, trace = _resolve_identity()  # 解包三元组
     url = _backends[namespace]

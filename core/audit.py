@@ -8,7 +8,7 @@
 
 这是 Runtime 层"审计"职责的落地：stderr 日志会随进程退出消失，审计行是
 【持久化、可回放、可对账】的数据面留痕。生产里它会进 SIEM / append-only 存储；
-本 demo 落 output/audit.jsonl 够教学。
+本 MVP 落 output/audit.jsonl 够教学。
 """
 
 import json

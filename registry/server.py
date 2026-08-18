@@ -9,6 +9,11 @@
     @asynccontextmanager 让一个 async 函数变成「上下文管理器」：yield 之前=启动逻辑，之后=清理。
   - {**req.model_dump(), "up": True}：dict 展开 + 追加（≈ 把 Map 复制一份再 put 一个 key）。
 
+存在价值 = Runtime 动态上下线。Gateway 运行时转发【不查 Registry】（路由靠启动时缓存的快照，
+见 gateway/explicit_proxy.py 的 _backends），一次 tools/call 全程不碰本进程。Registry 只在控制面：
+Runtime 自注册 / 健康巡检 / Gateway 周期拉目录。若 Runtime 永远静态固定，本进程可降级为 Gateway
+内一份写死的路由表——Registry 的全部意义押在「动态」二字。实证见 README「动态上下线演示」。
+
 职责：维护 MCP Runtime 的元数据清单 + 健康状态，给 Gateway 提供服务发现。
   POST   /register         Runtime 自荐注册
   GET    /servers          Gateway 启动时拉它建路由（含健康状态）
@@ -16,7 +21,7 @@
   GET    /health           自身存活探针
 
 不做的事（生产 Registry 才需要）：持久化、版本协商、多租户、schema 校验。
-本 demo 内存字典够用，进程重启即清空 —— 这是教学上的刻意简化。
+本 MVP 内存字典够用，进程重启即清空 —— 这是教学上的刻意简化。
 """
 
 import asyncio

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 一键跑通 MCP 三层治理 demo：Registry → Runtime(weather+calc) → Gateway($1) → Client(DeepSeek)
+# 一键跑通 MCP 三层治理 MVP：Registry → Runtime(weather+calc) → Gateway($1) → Client(DeepSeek)
 #
 # 用法:
 #   ./run.sh <native|explicit> "<任务>" [--user alice|bob]
